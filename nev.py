@@ -101,34 +101,32 @@ def load_data():
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 loaded_data = json.load(f)
-                # Рекурсивно обновляем данные, сохраняя структуру
-                update_nested_dict(data, loaded_data)
+                # Полностью заменяем данные
+                data.clear()
+                data.update(loaded_data)
             print(f"✅ Данные загружены из {DATA_FILE}")
+            print(f"📊 В файле найдено:")
+            print(f"   - Пользователей: {len(data.get('users', {}))}")
+            print(f"   - Аккаунтов Tanks: {len(data.get('accounts_common_tanks', []))}")
             return True
         except Exception as e:
             print(f"❌ Ошибка загрузки данных: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     else:
         print(f"ℹ️ Файл {DATA_FILE} не найден, будет создан при сохранении")
+        data.clear()
+        data.update(DEFAULT_DATA)
         save_data()
         return True
-
-def update_nested_dict(original, updates):
-    """Рекурсивно обновляет вложенный словарь"""
-    for key, value in updates.items():
-        if key in original:
-            if isinstance(original[key], dict) and isinstance(value, dict):
-                update_nested_dict(original[key], value)
-            else:
-                original[key] = value
-        else:
-            original[key] = value
 
 def save_data():
     """Сохраняет данные в data.json"""
     try:
         with open(DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
+        print(f"✅ Данные сохранены в {DATA_FILE}")
         return True
     except Exception as e:
         print(f"❌ Ошибка сохранения данных: {e}")
@@ -622,6 +620,10 @@ async def save_faq(update: Update, context: CallbackContext):
 # ========== ОСТАЛЬНЫЕ ФУНКЦИИ БОТА ==========
 async def start(update: Update, context: CallbackContext):
     global BOT_STOPPED
+    
+    if not update.effective_user:
+        return
+        
     if BOT_STOPPED and not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Бот временно остановлен.")
         return
@@ -731,14 +733,28 @@ async def start(update: Update, context: CallbackContext):
 
     await send_main_menu(update, context)
 
+Вот продолжение кода с исправленной функцией send_main_menu и остальными функциями:
+
+```python
 async def send_main_menu(update: Update, context: CallbackContext):
+    """Отправляет главное меню пользователю"""
+    if not update.effective_user:
+        return
+        
     user = update.effective_user
     user_id = str(user.id)
+    
+    # Проверяем, есть ли пользователь в базе
+    if user_id not in data["users"]:
+        # Если нет, создаем через start
+        await start(update, context)
+        return
+        
     coin_reward = data["settings"]["coin_reward"]
     exchange_price = data["settings"]["exchange_price"]
+    user_data = data["users"][user_id]
 
     pending_message = ""
-    user_data = data["users"][user_id]
     if user_data.get("coins_pending_approval", False):
         pending_message = "\n\n⚠️ У вас есть ожидающие начисления монеты!\nПодпишитесь на все каналы через '✅ Проверить подписку', чтобы получить реферальные монеты."
 
@@ -762,6 +778,10 @@ https://t.me/{context.bot.username}?start={user_id}{pending_message}
         await update.callback_query.message.reply_text(text, reply_markup=menu(user.id))
 
 async def panel_command(update: Update, context: CallbackContext):
+    """Команда /panel для админ-панели"""
+    if not update.effective_user:
+        return
+        
     user = update.effective_user
     if is_admin(user.id):
         await update.message.reply_text("👑 Админ панель\nВыберите раздел:", reply_markup=admin_kb_main(user.id))
@@ -769,6 +789,10 @@ async def panel_command(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ У вас нет доступа.", reply_markup=menu(user.id))
 
 async def user_info_command(update: Update, context: CallbackContext):
+    """Команда /info для просмотра информации о пользователе"""
+    if not update.effective_user:
+        return
+        
     if not is_admin(update.effective_user.id): 
         await update.message.reply_text("❌ У вас нет доступа к этой команде.")
         return
@@ -838,7 +862,12 @@ async def user_info_command(update: Update, context: CallbackContext):
         )
 
 async def get_account(update: Update, context: CallbackContext):
+    """Получение бесплатного аккаунта"""
     global BOT_STOPPED
+    
+    if not update.effective_user:
+        return
+        
     if BOT_STOPPED and not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Бот временно остановлен.")
         return
@@ -881,6 +910,7 @@ async def get_account(update: Update, context: CallbackContext):
     context.user_data["awaiting_account_action"] = "get"
 
 async def process_game_selection(update: Update, context: CallbackContext, game):
+    """Обработка выбора игры для получения аккаунта"""
     query = update.callback_query
     await query.answer()
     user = query.from_user
@@ -919,7 +949,12 @@ async def process_game_selection(update: Update, context: CallbackContext, game)
     await context.bot.send_message(chat_id=user.id, text="Выберите действие:", reply_markup=menu(user.id))
 
 async def exchange_coins(update: Update, context: CallbackContext):
+    """Обмен монет на аккаунт"""
     global BOT_STOPPED
+    
+    if not update.effective_user:
+        return
+        
     if BOT_STOPPED and not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Бот временно остановлен.")
         return
@@ -944,6 +979,7 @@ async def exchange_coins(update: Update, context: CallbackContext):
     context.user_data["awaiting_account_action"] = "exchange"
 
 async def process_exchange_game_selection(update: Update, context: CallbackContext, game):
+    """Обработка выбора игры для обмена монет"""
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
@@ -979,7 +1015,12 @@ async def process_exchange_game_selection(update: Update, context: CallbackConte
     await context.bot.send_message(chat_id=query.from_user.id, text="Выберите действие:", reply_markup=menu(int(user_id)))
 
 async def profile(update: Update, context: CallbackContext):
+    """Показывает профиль пользователя"""
     global BOT_STOPPED
+    
+    if not update.effective_user:
+        return
+        
     if BOT_STOPPED and not is_admin(update.effective_user.id):
         return
 
@@ -1031,6 +1072,10 @@ https://t.me/{context.bot.username}?start={user_id}
         await update.message.reply_text("❌ Профиль не найден", reply_markup=menu(user.id))
 
 async def account_history(update: Update, context: CallbackContext):
+    """Показывает историю полученных аккаунтов"""
+    if not update.effective_user:
+        return
+        
     user_id = str(update.effective_user.id)
     if user_id not in data["users"]:
         await update.message.reply_text("❌ Запустите бота /start", reply_markup=menu(int(user_id)))
@@ -1055,6 +1100,7 @@ async def account_history(update: Update, context: CallbackContext):
     await update.message.reply_text(text, reply_markup=menu(int(user_id)))
 
 async def check_subscription_logic(user_id: int, context: CallbackContext):
+    """Проверяет подписку пользователя на каналы"""
     channels = data.get("channels", [])
     if not channels:
         return True, []
@@ -1077,12 +1123,17 @@ async def check_subscription_logic(user_id: int, context: CallbackContext):
                 member = await context.bot.get_chat_member(chat_id, user_id)
                 if member.status not in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]:
                     not_subscribed.append(channel)
-        except:
+        except Exception as e:
+            print(f"Ошибка проверки подписки для канала {channel}: {e}")
             not_subscribed.append(channel)
     
     return len(not_subscribed) == 0, not_subscribed
 
 async def check_subscription(update: Update, context: CallbackContext):
+    """Команда для проверки подписки"""
+    if not update.effective_user:
+        return
+        
     user_id = update.effective_user.id
     is_sub, not_sub_list = await check_subscription_logic(user_id, context)
     
@@ -1123,8 +1174,11 @@ async def check_subscription(update: Update, context: CallbackContext):
             reply_markup=get_sub_keyboard(not_sub_list)
         )
 
-# ========== ФУНКЦИЯ ОБРАБОТКИ ПРОМОКОДОВ ==========
 async def process_promocode(update: Update, context: CallbackContext, promo_code: str):
+    """Обработка промокода"""
+    if not update.effective_user:
+        return
+        
     user = update.effective_user
     user_id = str(user.id)
     
@@ -1209,1147 +1263,81 @@ async def process_promocode(update: Update, context: CallbackContext, promo_code
     else:
         await update.message.reply_text("❌ Неверный промокод.")
 
-# ========== ОБРАБОТЧИК СООБЩЕНИЙ ==========
-async def message_handler(update: Update, context: CallbackContext):
-    global BOT_STOPPED
-    
-    if BOT_STOPPED and not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ Бот временно остановлен.")
-        return
-
-    user_id = update.effective_user.id
-    str_user_id = str(user_id)
-    message = update.message
-    text = message.text or message.caption or ""
-    
-    if str_user_id in data.get("banned_users", []):
-        return
-    
-    if context.user_data.get("awaiting_captcha"):
-        correct = context.user_data.get("captcha_correct", "")
-        if text.upper() == correct:
-            context.user_data["awaiting_captcha"] = False
-            context.user_data["just_passed_captcha"] = True
-            data["users"][str_user_id]["captcha_passed"] = True
-            save()
-            await message.reply_text("✅ Проверка пройдена!\n\nДобро пожаловать в бот!")
-            await send_main_menu(update, context)
-        else:
-            await message.reply_text("❌ Неверный код. Попробуйте ещё раз:")
-        return
-
-    # СОХРАНЕНИЕ FAQ
-    if context.user_data.get("setting_faq"):
-        await save_faq(update, context)
-        return
-
-    if context.user_data.get("leaving_review"):
-        if len(text) > 500:
-            await message.reply_text("❌ Отзыв слишком длинный (макс. 500 символов). Попробуйте снова:")
-            return
-        if len(text) < 5:
-            await message.reply_text("❌ Отзыв слишком короткий (мин. 5 символов). Попробуйте снова:")
-            return
-        
-        review_id = random.randint(100000, 999999)
-        pending_review = {
-            "id": review_id,
-            "user_id": str_user_id,
-            "user_name": update.effective_user.full_name,
-            "text": text,
-            "date": datetime.now().isoformat()
-        }
-        
-        data["pending_reviews"].append(pending_review)
-        save()
-        
-        await notify_super_admins(
-            context,
-            f"⭐ НОВЫЙ ОТЗЫВ НА МОДЕРАЦИЮ\nОт: {get_user_link(update.effective_user)}\nID отзыва: {review_id}\nТекст: {text[:200]}..."
-        )
-        
-        await message.reply_text("✅ Спасибо за отзыв!\n\nВаш отзыв отправлен на модерацию и скоро будет опубликован.")
-        context.user_data["leaving_review"] = False
-        return
-
-    if context.user_data.get("awaiting_file") and message.document:
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_ACCS):
-            await message.reply_text("❌ У вас нет прав на загрузку аккаунтов.")
-            context.user_data["awaiting_file"] = False
-            return
-            
-        file = await message.document.get_file()
-        content = await file.download_as_bytearray()
-        
-        try:
-            text_content = content.decode('utf-8').strip()
-        except:
-            text_content = content.decode('latin-1').strip()
-        
-        accounts = []
-        for line in text_content.split('\n'):
-            line = line.strip()
-            if line and ':' in line:
-                accounts.append(line)
-        
-        if not accounts:
-            await message.reply_text("❌ Не найдено валидных аккаунтов в формате почта:пароль.")
-            context.user_data["awaiting_file"] = False
-            return
-        
-        context.user_data["temp_accounts"] = accounts
-        
-        await message.reply_text(
-            f"✅ Загружено {len(accounts)} аккаунтов.\n\nВыберите игру для загрузки:",
-            reply_markup=admin_kb_acc_game_selection()
-        )
-        context.user_data["awaiting_file"] = False
-        return
-
-    # ========== РАССЫЛКА - ОБРАБОТКА КНОПОК ==========
-    if context.user_data.get("broadcast_step") == "wait_btn_text":
-        context.user_data["broadcast_btn_text"] = text
-        await message.reply_text("🔗 Теперь отправьте ССЫЛКУ для кнопки (начинается с http/https или t.me):")
-        context.user_data["broadcast_step"] = "wait_btn_url"
-        return
-
-    if context.user_data.get("broadcast_step") == "wait_btn_url":
-        url = text.strip()
-        if not (url.startswith("http://") or url.startswith("https://") or url.startswith("t.me/")):
-            await message.reply_text("❌ Ссылка должна начинаться с http://, https:// или t.me/. Попробуйте снова:")
-            return
-        
-        if url.startswith("t.me/"):
-            url = f"https://{url}"
-            
-        context.user_data["broadcast_btn_url"] = url
-        
-        if "broadcast_buttons" not in context.user_data:
-            context.user_data["broadcast_buttons"] = []
-        
-        btn_text = context.user_data["broadcast_btn_text"]
-        context.user_data["broadcast_buttons"].append([InlineKeyboardButton(btn_text, url=url)])
-        
-        del context.user_data["broadcast_btn_text"]
-        del context.user_data["broadcast_btn_url"]
-        
-        await message.reply_text(f"✅ Кнопка добавлена! Добавить ещё кнопку?", reply_markup=broadcast_add_btn_kb())
-        context.user_data["broadcast_step"] = "wait_decision"
-        return
-
-    if context.user_data.get("broadcasting"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_BROADCAST):
-            await message.reply_text("❌ У вас нет прав на рассылку.")
-            context.user_data["broadcasting"] = False
-            return
-        await handle_broadcast_content(update, context)
-        return
-
-    if context.user_data.get("setting_price"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_SETTINGS):
-            await message.reply_text("❌ У вас нет прав на изменение настроек.")
-            context.user_data["setting_price"] = False
-            return
-            
-        try:
-            price = int(text)
-            if price < 1:
-                await message.reply_text("❌ Цена должна быть положительным числом.")
-                return
-            
-            data["settings"]["exchange_price"] = price
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"💰 ИЗМЕНЕНА ЦЕНА АККАУНТА\nКем: {get_user_link(update.effective_user)}\nНовая цена: {price} монет"
-            )
-            
-            await message.reply_text(f"✅ Цена аккаунта изменена на {price} монет.", reply_markup=back_btn("admin_menu_settings"))
-        except ValueError:
-            await message.reply_text("❌ Введите число.")
-        context.user_data["setting_price"] = False
-        return
-
-    if context.user_data.get("setting_reward"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_SETTINGS):
-            await message.reply_text("❌ У вас нет прав на изменение настроек.")
-            context.user_data["setting_reward"] = False
-            return
-            
-        try:
-            reward = int(text)
-            if reward < 1:
-                await message.reply_text("❌ Награда должна быть положительным числом.")
-                return
-            
-            data["settings"]["coin_reward"] = reward
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"🤝 ИЗМЕНЕНА НАГРАДА ЗА РЕФЕРАЛА\nКем: {get_user_link(update.effective_user)}\nНовая награда: {reward} монет"
-            )
-            
-            await message.reply_text(f"✅ Награда за реферала изменена на {reward} монет.", reply_markup=back_btn("admin_menu_settings"))
-        except ValueError:
-            await message.reply_text("❌ Введите число.")
-        context.user_data["setting_reward"] = False
-        return
-
-    if context.user_data.get("adding_channel"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_CHANNELS):
-            await message.reply_text("❌ У вас нет прав на управление каналами.")
-            context.user_data["adding_channel"] = False
-            return
-            
-        channel = text.strip()
-        if channel not in data["channels"]:
-            data["channels"].append(channel)
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"📢 ДОБАВЛЕН КАНАЛ\nКем: {get_user_link(update.effective_user)}\nКанал: {channel}"
-            )
-            
-            await message.reply_text(f"✅ Канал добавлен: {channel}", reply_markup=admin_kb_channels())
-        else:
-            await message.reply_text("❌ Канал уже есть в списке.")
-        context.user_data["adding_channel"] = False
-        return
-
-    if context.user_data.get("deleting_channel"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_CHANNELS):
-            await message.reply_text("❌ У вас нет прав на управление каналами.")
-            context.user_data["deleting_channel"] = False
-            return
-            
-        channel = text.strip()
-        if channel in data["channels"]:
-            data["channels"].remove(channel)
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"📢 УДАЛЕН КАНАЛ\nКем: {get_user_link(update.effective_user)}\nКанал: {channel}"
-            )
-            
-            await message.reply_text(f"✅ Канал удален: {channel}", reply_markup=admin_kb_channels())
-        else:
-            await message.reply_text("❌ Канал не найден в списке.")
-        context.user_data["deleting_channel"] = False
-        return
-
-    if context.user_data.get("adding_admin"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_ADD_ADMIN):
-            await message.reply_text("❌ У вас нет прав на добавление админов.")
-            context.user_data["adding_admin"] = False
-            return
-            
-        try:
-            new_admin_id = int(text.strip())
-            if str(new_admin_id) == str(user_id):
-                await message.reply_text("❌ Нельзя добавить самого себя.")
-                return
-                
-            if str(new_admin_id) in data["admins"]:
-                await message.reply_text("❌ Этот пользователь уже админ.")
-                return
-                
-            try:
-                user_info = await context.bot.get_chat(new_admin_id)
-                admin_name = user_info.full_name
-            except:
-                admin_name = f"ID: {new_admin_id}"
-            
-            data["admins"][str(new_admin_id)] = {
-                "name": admin_name,
-                "permissions": DEFAULT_PERMISSIONS.copy(),
-                "added_by": str(user_id),
-                "added_date": datetime.now().isoformat()
-            }
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"🛡 НАЗНАЧЕН НОВЫЙ АДМИН\nКем: {get_user_link(update.effective_user)}\nАдмин: {admin_name} (ID: {new_admin_id})"
-            )
-            
-            try:
-                await context.bot.send_message(
-                    chat_id=new_admin_id,
-                    text="🎉 Поздравляем!\n\nВы были назначены администратором бота. Используйте команду /panel для доступа к админ-панели."
-                )
-            except:
-                pass
-                
-            await message.reply_text(f"✅ Пользователь {admin_name} назначен админом!", reply_markup=admin_kb_admins_list())
-        except ValueError:
-            await message.reply_text("❌ Введите числовой ID.")
-        context.user_data["adding_admin"] = False
-        return
-
-    if context.user_data.get("creating_promo"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_PROMOS):
-            await message.reply_text("❌ У вас нет прав на создание промокодов.")
-            context.user_data["creating_promo"] = False
-            return
-            
-        parts = text.strip().split()
-        if len(parts) != 3:
-            await message.reply_text("❌ Неверный формат. Нужно: КОД КОЛИЧЕСТВО_АККАУНТОВ ЛИМИТ_ИСПОЛЬЗОВАНИЙ\nПример: SUMMER 5 100")
-            return
-            
-        code, reward_str, uses_str = parts
-        
-        try:
-            reward = int(reward_str)
-            max_uses = int(uses_str)
-            
-            if reward < 1 or max_uses < 1:
-                await message.reply_text("❌ Количество аккаунтов и использований должны быть положительными числами.")
-                return
-                
-            if code in data["promocodes"]:
-                await message.reply_text("❌ Промокод с таким названием уже существует.")
-                return
-                
-            context.user_data["temp_promo_data"] = {
-                "code": code,
-                "reward": reward,
-                "max_uses": max_uses
-            }
-            
-            await message.reply_text(
-                f"✅ Данные промокода получены:\nКод: {code}\nНаграда: {reward} аккаунтов\nМакс. использований: {max_uses}\n\nВыберите источник аккаунтов:",
-                reply_markup=admin_kb_promo_source_choice()
-            )
-        except ValueError:
-            await message.reply_text("❌ Количество и использование должны быть числами.")
-        context.user_data["creating_promo"] = False
-        return
-
-    if context.user_data.get("banning_user"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_BAN):
-            await message.reply_text("❌ У вас нет прав на бан пользователей.")
-            context.user_data["banning_user"] = False
-            return
-            
-        target_id = text.strip()
-        
-        if target_id in data.get("banned_users", []):
-            await message.reply_text("❌ Этот пользователь уже забанен.")
-            return
-            
-        if not target_id.isdigit():
-            await message.reply_text("❌ ID должен состоять только из цифр.")
-            return
-            
-        if int(target_id) in SUPER_ADMIN_IDS:
-            await message.reply_text("❌ Нельзя забанить супер-админа!")
-            return
-            
-        if target_id in data.get("admins", {}):
-            await message.reply_text("❌ Нельзя забанить админа. Сначала удалите его из админов.")
-            return
-            
-        if target_id in data["users"]:
-            data.setdefault("banned_users", []).append(target_id)
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"⛔ ЗАБАНЕН ПОЛЬЗОВАТЕЛЬ\nКем: {get_user_link(update.effective_user)}\nID пользователя: {target_id}"
-            )
-            
-            try:
-                await context.bot.send_message(
-                    chat_id=int(target_id),
-                    text="⛔ Вы были заблокированы в боте!\n\nЕсли вы считаете, что это ошибка, обратитесь к администратору."
-                )
-            except:
-                pass
-                
-            await message.reply_text(f"✅ Пользователь {target_id} забанен.", reply_markup=admin_kb_users())
-        else:
-            await message.reply_text("❌ Пользователь не найден в базе.")
-        context.user_data["banning_user"] = False
-        return
-
-    if context.user_data.get("unbanning_user"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_BAN):
-            await message.reply_text("❌ У вас нет прав на разбан пользователей.")
-            context.user_data["unbanning_user"] = False
-            return
-            
-        target_id = text.strip()
-        
-        if target_id in data.get("banned_users", []):
-            data["banned_users"].remove(target_id)
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"✅ РАЗБАНЕН ПОЛЬЗОВАТЕЛЬ\nКем: {get_user_link(update.effective_user)}\nID пользователя: {target_id}"
-            )
-            
-            try:
-                await context.bot.send_message(
-                    chat_id=int(target_id),
-                    text="✅ Ваша блокировка снята!\n\nВы снова можете пользоваться ботом."
-                )
-            except:
-                pass
-                
-            await message.reply_text(f"✅ Пользователь {target_id} разбанен.", reply_markup=admin_kb_users())
-        else:
-            await message.reply_text("❌ Этот пользователь не забанен.")
-        context.user_data["unbanning_user"] = False
-        return
-
-    if context.user_data.get("deleting_review"):
-        if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_REVIEWS):
-            await message.reply_text("❌ У вас нет прав на удаление отзывов.")
-            context.user_data["deleting_review"] = False
-            return
-            
-        review_id = text.strip()
-        
-        found = False
-        for i, review in enumerate(data.get("reviews", [])):
-            if str(review.get("id")) == review_id:
-                data["reviews"].pop(i)
-                found = True
-                break
-                
-        if not found:
-            for i, review in enumerate(data.get("pending_reviews", [])):
-                if str(review.get("id")) == review_id:
-                    data["pending_reviews"].pop(i)
-                    found = True
-                    break
-        
-        if found:
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"🗑 УДАЛЕН ОТЗЫВ\nКем: {get_user_link(update.effective_user)}\nID отзыва: {review_id}"
-            )
-            
-            await message.reply_text(f"✅ Отзыв с ID {review_id} удален.", reply_markup=admin_kb_reviews())
-        else:
-            await message.reply_text("❌ Отзыв с таким ID не найден.")
-        context.user_data["deleting_review"] = False
-        return
-
-    if context.user_data.get("sending_pm"):
-        parts = text.strip().split(' ', 1)
-        if len(parts) < 2:
-            await message.reply_text("❌ Неверный формат. Нужно: ID_ПОЛЬЗОВАТЕЛЯ СООБЩЕНИЕ\nПример: 123456789 Привет!")
-            return
-            
-        target_id, pm_text = parts[0], parts[1]
-        
-        if not target_id.isdigit():
-            await message.reply_text("❌ ID должен состоять только из цифр.")
-            return
-            
-        try:
-            await context.bot.send_message(
-                chat_id=int(target_id),
-                text=pm_text
-            )
-            
-            await notify_super_admins(
-                context,
-                f"✉️ ОТПРАВЛЕНО ЛИЧНОЕ СООБЩЕНИЕ\nКем: {get_user_link(update.effective_user)}\nКому: ID {target_id}\nТекст: {pm_text[:200]}..."
-            )
-            
-            await message.reply_text(f"✅ Сообщение отправлено пользователю {target_id}")
-        except Forbidden:
-            await message.reply_text("❌ Пользователь заблокировал бота.")
-        except Exception as e:
-            await message.reply_text(f"❌ Ошибка отправки: {e}")
-        context.user_data["sending_pm"] = False
-        return
-
-    # Обработка текстовых команд
-    if text == "🎮 Получить аккаунт":
-        await get_account(update, context)
-    elif text == "👤 Мой профиль":
-        await profile(update, context)
-    elif text == "📜 История":
-        await account_history(update, context)
-    elif text == "💎 Обменять монеты":
-        await exchange_coins(update, context)
-    elif text == "🎟 Промокод":
-        await message.reply_text("🎟 Введите промокод:\n\nОтправьте код промокода в сообщении.\nПример: SUMMER2024")
-        context.user_data["awaiting_promocode"] = True
-    elif text == "ℹ️ О боте":
-        await about_bot(update, context)
-    elif text == "✅ Проверить подписку":
-        await check_subscription(update, context)
-    elif text == "👑 Админ":
-        await panel_command(update, context)
-    elif text == "⭐ Отзывы":
-        await message.reply_text("⭐ Отзывы о боте\n\nЗдесь вы можете прочитать отзывы других пользователей или оставить свой.", 
-                               reply_markup=reviews_keyboard())
-    elif context.user_data.get("awaiting_promocode"):
-        promo_code = text.strip().upper()
-        await process_promocode(update, context, promo_code)
-        context.user_data["awaiting_promocode"] = False
-    elif text.startswith('/promo'):
-        parts = text.split(' ', 1)
-        if len(parts) > 1:
-            promo_code = parts[1].strip().upper()
-            await process_promocode(update, context, promo_code)
-        else:
-            await message.reply_text("🎟 Использование команды:\n/promo КОД\n\nПример: /promo SUMMER2024")
-    else:
-        if update.effective_user.id in SUPER_ADMIN_IDS or str(update.effective_user.id) in data.get("admins", {}):
-            await panel_command(update, context)
-        else:
-            await send_main_menu(update, context)
-
-# ========== ОБРАБОТЧИК CALLBACK ==========
-async def main_callback_handler(update: Update, context: CallbackContext):
-    global BOT_STOPPED
-    
-    query = update.callback_query
-    cb_data = query.data 
-    user_id = query.from_user.id
-    str_user_id = str(user_id)
-    
-    await query.answer()
-
-    if cb_data.startswith("select_game_"):
-        game = cb_data.split("_")[2]
-        if game in [GAME_TANKS, GAME_BLITZ]:
-            if context.user_data.get("awaiting_game_selection"):
-                action = context.user_data.get("awaiting_account_action")
-                if action == "get":
-                    await process_game_selection(update, context, game)
-                elif action == "exchange":
-                    await process_exchange_game_selection(update, context, game)
-                context.user_data["awaiting_game_selection"] = False
-                context.user_data["awaiting_account_action"] = None
-            else:
-                await query.edit_message_text(
-                    f"✅ Выбрана игра: {GAME_NAMES[game]}\n\nТеперь вы можете получать аккаунты для этой игры."
-                )
-        return
-
-    if cb_data == "view_reviews":
-        reviews = data.get("reviews", [])
-        if not reviews:
-            await query.message.reply_text("📝 Пока нет отзывов. Будьте первым!", reply_markup=reviews_keyboard())
-            return
-        
-        text = "⭐ Опубликованные отзывы:\n\n"
-        for i, review in enumerate(reviews[-10:], 1):
-            date = datetime.fromisoformat(review["date"]).strftime("%d.%m.%Y")
-            text += f"{i}. {review['text']}\n   👤 {review['user_name']} • {date}\n\n"
-        if len(reviews) > 10:
-            text += f"\n📊 Всего отзывов: {len(reviews)}"
-        
-        try:
-            await query.edit_message_text(text, reply_markup=reviews_keyboard())
-        except BadRequest:
-            pass 
-        return
-
-    elif cb_data == "leave_review":
-        await query.message.reply_text("⭐ Оставить отзыв\n\nНапишите ваш отзыв одним сообщением (максимум 500 символов):\n\n📝 Ваш отзыв будет отправлен на модерацию.")
-        context.user_data["leaving_review"] = True
-        return
-
-    if cb_data == "delete_msg":
-        try:
-            await query.delete_message()
-        except:
-            pass
-        return
-
-    if cb_data == "check_sub_confirm":
-        is_sub, not_sub_list = await check_subscription_logic(user_id, context)
-        if is_sub:
-            user_data = data["users"][str_user_id]
-            if user_data.get("coins_pending_approval", False):
-                ref_id = user_data.get("pending_referral") or user_data.get("referrer_id")
-                if ref_id and ref_id in data["users"]:
-                    reward = data["settings"]["coin_reward"]
-                    data["users"][ref_id]["coins"] += reward
-                    user_data["coins_pending_approval"] = False
-                    if "pending_referral" in user_data:
-                        del user_data["pending_referral"]
-                    save()
-                    
-                    try:
-                        await context.bot.send_message(
-                            chat_id=int(ref_id),
-                            text=f"💰 Реферальный бонус начислен!\nВаш реферал подписался на все каналы.\nВам начислено: {reward} монет."
-                        )
-                    except:
-                        pass
-                    
-                    await notify_super_admins(
-                        context,
-                        f"✅ ВЫПОЛНЕНА ПОДПИСКА РЕФЕРАЛА\nРеферал: {get_user_link(query.from_user)}\nРефовод: {ref_id}\nНачислено: {reward} монет"
-                    )
-            
-            await query.edit_message_text("✅ Отлично! Вы подписаны.\nТеперь можете пользоваться ботом.")
-        else:
-            await query.edit_message_text(f"❌ Вы все еще не подписаны!", reply_markup=get_sub_keyboard(not_sub_list))
-        return
-
-    if cb_data == "exchange_coins":
-        if update.callback_query.message:
-            await update.callback_query.message.reply_text("💎 Обмен монет:", reply_markup=exchange_keyboard())
-        return
-
-    if not is_admin(user_id):
-        return
-
+# Добавим обработчик ошибок
+async def error_handler(update: Update, context: CallbackContext):
+    """Глобальный обработчик ошибок"""
     try:
-        if cb_data == "admin_main":
-            context.user_data.clear()
-            await query.edit_message_text("👑 Админ панель", reply_markup=admin_kb_main(user_id))
-        
-        elif cb_data == "admin_stats":
-            total_accounts_issued = sum(user.get("received", 0) for user in data["users"].values())
-            total_coins = sum(user.get("coins", 0) for user in data["users"].values())
-            banned_count = len(data.get("banned_users", []))
-            total_in_stock = (len(data['accounts_common_tanks']) + 
-                              len(data['accounts_promo_tanks']) +
-                              len(data['accounts_common_blitz']))
-            
-            stats = f"""📊 Статистика бота
-
-👥 Пользователей: {len(data["users"])}
-⛔️ Забанено: {banned_count}
-📦 Аккаунтов в наличии: {total_in_stock}
-🎮 Всего выдано аккаунтов: {total_accounts_issued}
-💰 Всего монет у пользователей: {total_coins}
-🎟 Промокодов: {len(data["promocodes"])}
-⭐️ Отзывов: {len(data.get("reviews", []))} (⏳ {len(data["pending_reviews"])} на модерации)
-📢 Каналов: {len(data.get("channels", []))}
-🛡 Админов (доп): {len(data.get("admins", {}))}
-
-⏸️ Бот {'остановлен' if BOT_STOPPED else 'работает'}"""
-            await query.edit_message_text(stats, reply_markup=back_btn())
-
-        elif cb_data == "admin_menu_accs":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_ACCS):
-                await query.answer("❌ У вас нет прав на управление аккаунтами", show_alert=True)
-                return
-                
-            total_accounts = (len(data['accounts_common_tanks']) + len(data['accounts_promo_tanks']) +
-                             len(data['accounts_common_blitz']))
-            
-            text = f"""📦 Управление аккаунтами
-
-📊 Статистика аккаунтов:
-• Всего аккаунтов в наличии: {total_accounts}
-• TanksBlitz (Общая): {len(data['accounts_common_tanks'])} шт.
-• TanksBlitz (Промо): {len(data['accounts_promo_tanks'])} шт.
-• WoT Blitz (Общая): {len(data['accounts_common_blitz'])} шт.
-
-Выберите действие:"""
-            await query.edit_message_text(text, reply_markup=admin_kb_accounts())
-            
-        elif cb_data == "admin_select_game":
-            await query.edit_message_text("🎮 Выберите игру для управления:", reply_markup=admin_kb_acc_game_selection())
-            
-        elif cb_data.startswith("admin_game_"):
-            game = cb_data.split("_")[2]
-            if game in [GAME_TANKS, GAME_BLITZ]:
-                context.user_data["selected_admin_game"] = game
-                game_name = GAME_NAMES[game]
-                
-                if game == GAME_TANKS:
-                    common_count = len(data.get(f'accounts_common_{game}', []))
-                    promo_count = len(data.get(f'accounts_promo_{game}', []))
-                    text = f"""📦 Управление аккаунтами для {game_name}
-                    
-📊 Статистика:
-• Общая база: {common_count} шт.
-• Промо база: {promo_count} шт.
-• Всего: {common_count + promo_count} шт."""
-                else:
-                    common_count = len(data.get(f'accounts_common_{game}', []))
-                    text = f"""📦 Управление аккаунтами для {game_name}
-                    
-📊 Статистика:
-• Общая база: {common_count} шт.
-• Промо база: Нет (только общая база)"""
-                
-                await query.edit_message_text(text, reply_markup=admin_kb_acc_actions_for_game(game))
-            
-        elif cb_data == "admin_menu_promo":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_PROMOS):
-                await query.answer("❌ У вас нет прав на управление промокодами", show_alert=True)
-                return
-            await query.edit_message_text("🎟 Управление промокодами (только для TanksBlitz)", reply_markup=admin_kb_promo())
-
-        elif cb_data == "admin_menu_users":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_BAN):
-                await query.answer("❌ У вас нет прав на управление пользователями", show_alert=True)
-                return
-            await query.edit_message_text(
-                f"👥 Управление пользователями\nВсего юзеров: {len(data['users'])}\nВ бане: {len(data.get('banned_users', []))}", 
-                reply_markup=admin_kb_users()
-            )
-
-        elif cb_data == "admin_menu_reviews":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_REVIEWS):
-                await query.answer("❌ У вас нет прав на модерацию отзывов", show_alert=True)
-                return
-            pending_count = len(data["pending_reviews"])
-            approved_count = len(data["reviews"])
-            await query.edit_message_text(
-                f"⭐ Управление отзывами\n\n⏳ Ожидают модерации: {pending_count}\n✅ Опубликовано: {approved_count}", 
-                reply_markup=admin_kb_reviews()
-            )
-            
-        elif cb_data == "admin_menu_settings":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_SETTINGS):
-                await query.answer("❌ У вас нет прав на настройки", show_alert=True)
-                return
-            stats = f"""⚙️ Настройки бота
-            
-💰 Цена аккаунта: {data['settings']['exchange_price']} монет
-🤝 Награда за реферала: {data['settings']['coin_reward']} монет
-📝 Текст FAQ: {len(data['settings']['faq_text'])} символов"""
-            await query.edit_message_text(stats, reply_markup=admin_kb_settings())
-
-        elif cb_data == "admin_close":
-            await query.delete_message()
-            
-        elif cb_data == "admin_acc_load":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_ACCS):
-                await query.answer("❌ У вас нет прав на загрузку аккаунтов", show_alert=True)
-                return
-            await query.message.reply_text("🔄 Отправьте .txt файл с аккаунтами (почта:пароль).")
-            context.user_data["awaiting_file"] = True
-
-        elif cb_data.startswith("upload_to_common_") or cb_data.startswith("upload_to_promo_"):
-            accounts = context.user_data.get("temp_accounts", [])
-            if not accounts:
-                await query.edit_message_text("❌ Ошибка: список аккаунтов пуст или утерян.")
-                return
-            
-            parts = cb_data.split("_")
-            target_type = parts[2]
-            game = parts[3]
-            
-            if game == GAME_BLITZ and target_type == "promo":
-                await query.edit_message_text("❌ Для WoT Blitz нет промо-базы. Можно загружать только в общую базу.")
-                return
-            
-            target_key = f"accounts_{target_type}_{game}"
-            
-            data[target_key].extend(accounts)
-            save()
-            
-            name_map = {"common": "ОБЩУЮ", "promo": "ПРОМО"}
-            game_map = {"tanks": "TanksBlitz", "blitz": "WoT Blitz"}
-            
-            await notify_super_admins(
-                context,
-                f"📦 ЗАГРУЖЕНЫ АККАУНТЫ\nКем: {get_user_link(query.from_user)}\nИгра: {game_map[game]}\nБаза: {name_map[target_type]}\nКоличество: {len(accounts)} аккаунтов"
-            )
-            
-            await query.edit_message_text(f"✅ Успешно добавлено {len(accounts)} аккаунтов в {name_map[target_type]} базу {game_map[game]}!", 
-                                          reply_markup=admin_kb_acc_actions_for_game(game))
-            context.user_data["temp_accounts"] = []
-
-        elif cb_data.startswith("admin_acc_del_common_") or cb_data.startswith("admin_acc_del_promo_"):
-            parts = cb_data.split("_")
-            target_type = parts[3]
-            game = parts[4]
-            
-            if game == GAME_BLITZ and target_type == "promo":
-                await query.answer("Для WoT Blitz нет промо-базы", show_alert=True)
-                return
-            
-            target_key = f"accounts_{target_type}_{game}"
-            count = len(data[target_key])
-            data[target_key] = []
-            save()
-            
-            game_map = {"tanks": "TanksBlitz", "blitz": "WoT Blitz"}
-            
-            await notify_super_admins(
-                context,
-                f"🗑 УДАЛЕНЫ АККАУНТЫ\nКем: {get_user_link(query.from_user)}\nИгра: {game_map[game]}\nБаза: {target_type}\nКоличество: {count} аккаунтов"
-            )
-            
-            await query.answer(f"Удалено {count} аккаунтов из {target_type} базы {game_map[game]}", show_alert=True)
-            await query.edit_message_text("📦 Аккаунты обновлены", reply_markup=admin_kb_acc_actions_for_game(game))
-
-        elif cb_data == "set_price":
-            await query.message.reply_text(f"💰 Введите новую цену аккаунта (сейчас: {data['settings']['exchange_price']}):")
-            context.user_data["setting_price"] = True
-            
-        elif cb_data == "set_reward":
-            await query.message.reply_text(f"🤝 Введите новую награду за рефа (сейчас: {data['settings']['coin_reward']}):")
-            context.user_data["setting_reward"] = True
-            
-        elif cb_data == "set_faq":
-            await query.message.reply_text("📝 Отправьте новый текст FAQ (можно с форматированием):")
-            context.user_data["setting_faq"] = True
-
-        elif cb_data == "admin_promo_create":
-            await query.message.reply_text(
-                "🎟 Создание промокода (только для TanksBlitz)\nВведите: КОД КОЛИЧЕСТВО_АККАУНТОВ ЛИМИТ_ИСПОЛЬЗОВАНИЙ\nПример: SUMMER 5 100"
-            )
-            context.user_data["creating_promo"] = True
-
-        elif cb_data.startswith("promo_src_"):
-            promo_data = context.user_data.get("temp_promo_data")
-            if not promo_data:
-                await query.edit_message_text("Ошибка создания промокода.")
-                return
-            
-            source = cb_data.split("_")[2]
-            code = promo_data["code"]
-            
-            data["promocodes"][code] = {
-                "reward": promo_data["reward"],
-                "max_uses": promo_data["max_uses"],
-                "used": 0,
-                "source": source,
-                "game": GAME_TANKS
-            }
-            save()
-            
-            src_name = "ОБЩЕЙ" if source == "common" else "ПРОМО"
-            
-            await notify_super_admins(
-                context,
-                f"🎟 СОЗДАН ПРОМОКОД\nКем: {get_user_link(query.from_user)}\nКод: {code}\nНаграда: {promo_data['reward']} аккаунтов\nЛимит: {promo_data['max_uses']} использований\nБаза: {src_name}"
-            )
-            
-            await query.edit_message_text(f"✅ Промокод {code} создан!\nИгра: TanksBlitz\nИсточник аккаунтов: с {src_name} базы.", reply_markup=back_btn("admin_menu_promo"))
-            context.user_data["temp_promo_data"] = {}
-
-        elif cb_data == "admin_channel_list":
-            ch_list = "\n".join(data["channels"]) if data["channels"] else "Пусто"
-            await query.edit_message_text(f"📢 Каналы:\n{ch_list}", reply_markup=admin_kb_channels())
-            
-        elif cb_data == "admin_channel_add":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_CHANNELS):
-                await query.answer("❌ У вас нет прав на управление каналами", show_alert=True)
-                return
-            await query.message.reply_text("➕ Введите ссылку или @username канала (бот должен быть админом):")
-            context.user_data["adding_channel"] = True
-
-        elif cb_data == "admin_channel_del":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_CHANNELS):
-                await query.answer("❌ У вас нет прав на управление каналами", show_alert=True)
-                return
-            await query.message.reply_text("➖ Введите ссылку канала для удаления:")
-            context.user_data["deleting_channel"] = True
-
-        elif cb_data == "admin_menu_channels":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_CHANNELS):
-                await query.answer("❌ У вас нет прав на управление каналами", show_alert=True)
-                return
-            await query.edit_message_text("📢 Управление каналами", reply_markup=admin_kb_channels())
-            
-        elif cb_data == "admin_menu_admins":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_ADD_ADMIN):
-                await query.answer("❌ У вас нет прав на управление админами", show_alert=True)
-                return
-            await query.edit_message_text("🛡 Управление админами", reply_markup=admin_kb_admins_list())
-            
-        elif cb_data == "admin_add_new":
-            await query.message.reply_text("👤 Введите ID нового админа:")
-            context.user_data["adding_admin"] = True
-            
-        elif cb_data.startswith("adm_edit:"):
-            target_id = cb_data.split(":")[1]
-            await query.edit_message_text(f"⚙️ Права для {target_id}", reply_markup=admin_kb_admin_rights(target_id))
-
-        elif cb_data.startswith("adm_toggle:"):
-            _, target_id, perm = cb_data.split(":")
-            if str(target_id) in data["admins"]:
-                curr = data["admins"][str(target_id)]["permissions"].get(perm, False)
-                data["admins"][str(target_id)]["permissions"][perm] = not curr
-                save()
-                await query.edit_message_reply_markup(reply_markup=admin_kb_admin_rights(target_id))
-
-        elif cb_data.startswith("adm_delete:"):
-            target_id = cb_data.split(":")[1]
-            if str(target_id) in data["admins"]:
-                del data["admins"][str(target_id)]
-                save()
-                
-                await notify_super_admins(
-                    context,
-                    f"🗑 УДАЛЕН АДМИН\nКем: {get_user_link(query.from_user)}\nID админа: {target_id}"
-                )
-                
-                await query.edit_message_text("Админ удален", reply_markup=admin_kb_admins_list())
-
-        elif cb_data == "admin_promo_list":
-            promos = data.get("promocodes", {})
-            if not promos:
-                await query.edit_message_text("🎟 Нет активных промокодов.")
-                return
-            
-            text = "🎟 Активные промокоды:\n\n"
-            for code, details in promos.items():
-                uses = f"{details.get('used', 0)}/{details.get('max_uses', 0)}"
-                reward = details.get("reward", 1)
-                source = details.get("source", "common")
-                source_name = "ОБЩАЯ" if source == "common" else "ПРОМО"
-                game = details.get("game", GAME_TANKS)
-                game_name = GAME_NAMES.get(game, "Unknown")
-                
-                text += f"• {code} - {reward} акк. ({game_name})\n  Использовано: {uses} | Источник: {source_name}\n\n"
-            
-            await query.edit_message_text(text, reply_markup=back_btn("admin_menu_promo"))
-
-        elif cb_data == "admin_user_ban":
-            await query.message.reply_text("⛔ Введите ID пользователя для бана:")
-            context.user_data["banning_user"] = True
-
-        elif cb_data == "admin_user_unban":
-            await query.message.reply_text("✅ Введите ID пользователя для разбана:")
-            context.user_data["unbanning_user"] = True
-
-        elif cb_data == "admin_review_moderate":
-            await query.edit_message_text("⭐ Модерация отзывов", reply_markup=admin_kb_review_moderation())
-
-        elif cb_data == "mod_view_pending":
-            pending = data.get("pending_reviews", [])
-            if not pending:
-                await query.edit_message_text("⏳ Нет отзывов на модерации.", reply_markup=admin_kb_review_moderation())
-                return
-            
-            for review in pending[:5]:
-                date = datetime.fromisoformat(review["date"]).strftime("%d.%m.%Y %H:%M")
-                text = f"⏳ Отзыв на модерации\n\nID: {review['id']}\nДата: {date}\n👤 Пользователь: {review['user_name']} (ID: {review['user_id']})\n\n📝 Текст:\n{review['text']}"
-                
-                await query.message.reply_text(text, reply_markup=moderation_review_kb(review['id']))
-            
-            await query.edit_message_text(f"⏳ Показано {min(5, len(pending))} из {len(pending)} отзывов", reply_markup=admin_kb_review_moderation())
-
-        elif cb_data == "mod_view_approved":
-            reviews = data.get("reviews", [])
-            if not reviews:
-                await query.edit_message_text("✅ Нет опубликованных отзывов.", reply_markup=admin_kb_review_moderation())
-                return
-            
-            text = "✅ Опубликованные отзывы:\n\n"
-            for i, review in enumerate(reviews[-10:], 1):
-                date = datetime.fromisoformat(review["date"]).strftime("%d.%m.%Y")
-                text += f"{i}. {review['text']}\n   👤 {review['user_name']} • {date}\n\n"
-            
-            if len(reviews) > 10:
-                text += f"\n📊 Всего отзывов: {len(reviews)}"
-            
-            await query.edit_message_text(text, reply_markup=admin_kb_review_moderation())
-
-        elif cb_data.startswith("mod_approve:"):
-            review_id = cb_data.split(":")[1]
-            pending = data.get("pending_reviews", [])
-            
-            for i, review in enumerate(pending):
-                if str(review['id']) == review_id:
-                    approved_review = pending.pop(i)
-                    data["reviews"].append(approved_review)
-                    save()
-                    
-                    try:
-                        await context.bot.send_message(
-                            chat_id=int(approved_review['user_id']),
-                            text="✅ Ваш отзыв был одобрен и опубликован!\n\nСпасибо за обратную связь!"
-                        )
-                    except:
-                        pass
-                    
-                    await notify_super_admins(
-                        context,
-                        f"⭐ ОДОБРЕН ОТЗЫВ\nКем: {get_user_link(query.from_user)}\nОт: {approved_review['user_name']} (ID: {approved_review['user_id']})\nID отзыва: {review_id}"
-                    )
-                    
-                    await query.edit_message_text("✅ Отзыв одобрен и опубликован!", reply_markup=admin_kb_review_moderation())
-                    return
-            
-            await query.answer("Отзыв не найден", show_alert=True)
-
-        elif cb_data.startswith("mod_reject:"):
-            review_id = cb_data.split(":")[1]
-            pending = data.get("pending_reviews", [])
-            
-            for i, review in enumerate(pending):
-                if str(review['id']) == review_id:
-                    rejected_review = pending.pop(i)
-                    save()
-                    
-                    try:
-                        await context.bot.send_message(
-                            chat_id=int(rejected_review['user_id']),
-                            text="❌ Ваш отзыв был отклонен модератором.\n\nПожалуйста, убедитесь, что отзыв соответствует правилам сообщества."
-                        )
-                    except:
-                        pass
-                    
-                    await notify_super_admins(
-                        context,
-                        f"⭐ ОТКЛОНЕН ОТЗЫВ\nКем: {get_user_link(query.from_user)}\nОт: {rejected_review['user_name']} (ID: {rejected_review['user_id']})\nID отзыва: {review_id}"
-                    )
-                    
-                    await query.edit_message_text("❌ Отзыв отклонен.", reply_markup=admin_kb_review_moderation())
-                    return
-            
-            await query.answer("Отзыв не найден", show_alert=True)
-
-        elif cb_data == "admin_review_all":
-            reviews = data.get("reviews", [])
-            if not reviews:
-                await query.edit_message_text("📝 Нет отзывов.", reply_markup=admin_kb_reviews())
-                return
-            
-            text = "⭐ Все отзывы:\n\n"
-            for i, review in enumerate(reviews, 1):
-                date = datetime.fromisoformat(review["date"]).strftime("%d.%m.%Y %H:%M")
-                text += f"{i}. ID: {review['id']} | Дата: {date}\n👤 Пользователь: {review['user_name']}\n📝 Текст: {review['text']}\n\n"
-                if len(text) > 3500:
-                    text += "...\n\n(Показаны первые отзывы)"
-                    break
-            
-            await query.edit_message_text(text[:4000], reply_markup=back_btn("admin_menu_reviews"))
-
-        elif cb_data == "admin_review_clear_all":
-            count = len(data.get("reviews", []))
-            data["reviews"] = []
-            save()
-            
-            await notify_super_admins(
-                context,
-                f"🗑 УДАЛЕНЫ ВСЕ ОТЗЫВЫ\nКем: {get_user_link(query.from_user)}\nКоличество: {count} отзывов"
-            )
-            
-            await query.answer(f"Удалено {count} отзывов", show_alert=True)
-            await query.edit_message_text(f"🗑 Удалено {count} отзывов.", reply_markup=admin_kb_reviews())
-
-        elif cb_data == "admin_review_del_one":
-            await query.message.reply_text("❌ Введите ID отзыва для удаления:")
-            context.user_data["deleting_review"] = True
-
-        elif cb_data == "admin_broadcast_start":
-            if user_id not in SUPER_ADMIN_IDS and not check_perm(user_id, PERM_BROADCAST):
-                await query.answer("❌ У вас нет прав на рассылку", show_alert=True)
-                return
-            await query.message.reply_text(
-                "📣 Начало рассылки\n\n"
-                "Отправьте сообщение для рассылки (текст, фото, видео, документ).\n"
-                "Кнопки добавляются отдельно после сообщения."
-            )
-            context.user_data["broadcasting"] = True
-            context.user_data["broadcast_buttons"] = []
-
-        elif cb_data == "bc_add_btn_yes":
-            await query.message.reply_text(
-                "➕ Добавление кнопки\n\n"
-                "Отправьте текст кнопки (только текст):"
-            )
-            context.user_data["broadcast_step"] = "wait_btn_text"
-
-        elif cb_data == "bc_add_btn_no":
-            if not context.user_data.get("broadcast_msg_id") and not context.user_data.get("broadcast_text"):
-                await query.edit_message_text("❌ Сначала отправьте сообщение для рассылки.")
-                return
-
-            await show_broadcast_preview(update, context)
-
-        elif cb_data == "bc_edit_msg":
-            await query.message.reply_text("✏️ Отправьте исправленное сообщение:")
-            context.user_data["broadcasting"] = True
-
-        elif cb_data == "bc_confirm_send":
-            await start_broadcast(update, context)
-
-        elif cb_data == "admin_pm":
-            await query.message.reply_text(
-                "✉️ Отправка личного сообщения\n\nВведите: ID_ПОЛЬЗОВАТЕЛЯ СООБЩЕНИЕ\nПример: 123456789 Привет! Как дела?"
-            )
-            context.user_data["sending_pm"] = True
-
-        elif cb_data == "admin_toggle_bot":
-            BOT_STOPPED = not BOT_STOPPED
-            
-            status = "остановлен" if BOT_STOPPED else "запущен"
-            
-            await notify_super_admins(
-                context,
-                f"⏸ БОТ {'ОСТАНОВЛЕН' if BOT_STOPPED else 'ЗАПУЩЕН'}\nКем: {get_user_link(query.from_user)}"
-            )
-            
-            await query.answer(f"Бот {status}", show_alert=True)
-            await query.edit_message_text(f"👑 Админ панель\nБот: {'⏸ ОСТАНОВЛЕН' if BOT_STOPPED else '▶️ ЗАПУЩЕН'}", reply_markup=admin_kb_main(user_id))
-
+        raise context.error
+    except AttributeError as e:
+        if "'NoneType' object has no attribute 'id'" in str(e):
+            print(f"⚠️ Пропущен апдейт без пользователя: {update}")
+            return
+        print(f"❌ Ошибка: {e}")
     except Exception as e:
-        print(f"Callback error: {e}")
-        try:
-            await query.edit_message_text(f"❌ Ошибка: {e}")
-        except:
-            pass
+        print(f"❌ Необработанная ошибка: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ========== ОСНОВНАЯ ФУНКЦИЯ ==========
 def main():
     global data, BOT_STOPPED
     
     print("🤖 Запуск бота...")
+    print("=" * 50)
     
-    # Загрузка данных из файла
+    # Загружаем данные перед всем остальным
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 loaded_data = json.load(f)
-                # Обновляем данные, сохраняя структуру
-                for key in DEFAULT_DATA:
-                    if key in loaded_data:
-                        data[key] = loaded_data[key]
-                    else:
-                        data[key] = DEFAULT_DATA[key]
+                # Очищаем и обновляем глобальные данные
+                data.clear()
+                data.update(loaded_data)
             print(f"✅ Данные загружены из {DATA_FILE}")
         except Exception as e:
             print(f"❌ Ошибка загрузки данных: {e}")
             print("🔄 Использую структуру данных по умолчанию")
-            data = DEFAULT_DATA.copy()
-            save_data()
+            data.clear()
+            data.update(DEFAULT_DATA)
+            # Пробуем сохранить
+            try:
+                save_data()
+            except:
+                pass
     else:
         print(f"ℹ️ Файл {DATA_FILE} не найден, создаю новый")
-        data = DEFAULT_DATA.copy()
+        data.clear()
+        data.update(DEFAULT_DATA)
         save_data()
     
-    # Проверка структуры данных
+    # Проверка структуры данных и добавление отсутствующих ключей
     required_keys = ["accounts_common_tanks", "accounts_promo_tanks", "accounts_common_blitz", 
                      "users", "channels", "admins", "promocodes", "reviews", 
                      "pending_reviews", "banned_users", "failed_deliveries", "settings"]
     
+    data_updated = False
     for key in required_keys:
         if key not in data:
             print(f"⚠️ Добавлен отсутствующий ключ: {key}")
             data[key] = DEFAULT_DATA[key]
+            data_updated = True
     
     # Проверка настроек
     if "settings" not in data:
         data["settings"] = DEFAULT_DATA["settings"]
+        data_updated = True
     else:
         for setting_key in DEFAULT_DATA["settings"]:
             if setting_key not in data["settings"]:
                 data["settings"][setting_key] = DEFAULT_DATA["settings"][setting_key]
+                data_updated = True
     
-    save_data()
+    if data_updated:
+        save_data()
+        print("✅ Структура данных обновлена")
     
-    print(f"📊 Статистика при запуске:")
+    # Статистика для проверки
+    print(f"\n📊 СТАТИСТИКА ПРИ ЗАПУСКЕ:")
     print(f"  👥 Пользователей: {len(data['users'])}")
     print(f"  📦 Аккаунтов TanksBlitz (общая): {len(data['accounts_common_tanks'])}")
     print(f"  📦 Аккаунтов TanksBlitz (промо): {len(data['accounts_promo_tanks'])}")
@@ -2357,21 +1345,31 @@ def main():
     print(f"  🎟 Промокодов: {len(data['promocodes'])}")
     print(f"  ⭐ Отзывов: {len(data['reviews'])} (ожидают: {len(data['pending_reviews'])})")
     print(f"  ⛔ Забанено: {len(data.get('banned_users', []))}")
+    print(f"  📢 Каналов: {len(data.get('channels', []))}")
+    print(f"  🛡 Админов: {len(data.get('admins', {}))}")
+    print("=" * 50)
     
     app = Application.builder().token(TOKEN).build()
     
+    # Добавляем обработчик ошибок
+    app.add_error_handler(error_handler)
+    
+    # Добавляем обработчики команд
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("panel", panel_command))
     app.add_handler(CommandHandler("info", user_info_command))
-    app.add_handler(CommandHandler("promo", lambda u, c: message_handler(u, c)))  # Перенаправление на обработчик сообщений
     
+    # Добавляем обработчики сообщений
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     app.add_handler(MessageHandler(filters.Document.ALL, message_handler))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE, message_handler))
     
+    # Добавляем обработчик callback-запросов
     app.add_handler(CallbackQueryHandler(main_callback_handler))
     
     print("✅ Бот запущен и готов к работе!")
+    print("=" * 50)
+    print("📝 Для остановки бота нажмите Ctrl+C")
     print("=" * 50)
     
     app.run_polling(allowed_updates=Update.ALL_TYPES)
