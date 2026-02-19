@@ -733,9 +733,6 @@ async def start(update: Update, context: CallbackContext):
 
     await send_main_menu(update, context)
 
-Вот продолжение кода с исправленной функцией send_main_menu и остальными функциями:
-
-```python
 async def send_main_menu(update: Update, context: CallbackContext):
     """Отправляет главное меню пользователю"""
     if not update.effective_user:
@@ -1387,3 +1384,4 @@ if __name__ == "__main__":
         # Сохраняем данные перед выходом
         save_data()
         print("💾 Данные сохранены")
+
